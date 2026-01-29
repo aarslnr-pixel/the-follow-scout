@@ -348,11 +348,22 @@ class StateManager:
     """Apify Key-Value Store üzerinden state yönetimi"""
 
     STATE_KEY = "STATE"
+    STORE_NAME = "the-follow-scout-state"  # Named store (persistent across runs)
+
+    def __init__(self):
+        self.kv_store = None
+
+    async def _ensure_store(self):
+        """Named KV Store'u aç (lazy initialization)"""
+        if self.kv_store is None:
+            self.kv_store = await Actor.open_key_value_store(name=self.STORE_NAME)
+            logger.info(f"📂 Named KV Store açıldı: {self.STORE_NAME}")
 
     async def load_full_state(self) -> Dict:
         """Full state'i yükle (data + rotation info)"""
         try:
-            state = await Actor.get_value(self.STATE_KEY)
+            await self._ensure_store()
+            state = await self.kv_store.get_value(self.STATE_KEY)
             logger.info(f"🔍 State okuması: {type(state)} - {bool(state)}")
             if state:
                 rotation_idx = state.get('rotation_index', 0)
@@ -373,17 +384,18 @@ class StateManager:
     async def save_full_state(self, rotation_index: int, data: Dict[str, List[str]]):
         """Full state'i kaydet"""
         try:
+            await self._ensure_store()
             state = {
                 "rotation_index": rotation_index,
                 "data": data
             }
-            await Actor.set_value(self.STATE_KEY, state)
+            await self.kv_store.set_value(self.STATE_KEY, state)
             logger.info(f"💾 State kaydedildi (next_index: {rotation_index}, targets: {list(data.keys())})")
 
             # Doğrulama: Hemen oku
-            verify = await Actor.get_value(self.STATE_KEY)
+            verify = await self.kv_store.get_value(self.STATE_KEY)
             if verify and verify.get('rotation_index') == rotation_index:
-                logger.info("✅ State doğrulaması başarılı")
+                logger.info("✅ State doğrulaması başarılı (named store)")
             else:
                 logger.error(f"❌ State doğrulaması BAŞARISIZ! Okunan: {verify}")
         except Exception as e:

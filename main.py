@@ -17,7 +17,8 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 import requests
 import instaloader
-from apify_client import ApifyClient
+from apify import Actor
+import asyncio
 
 # ==========================================
 # 📊 CONFIGURATION & DATA STRUCTURES
@@ -348,25 +349,22 @@ class StateManager:
 
     STATE_KEY = "STATE"
 
-    def __init__(self, kv_store):
-        self.kv_store = kv_store
-
-    def load_previous_state(self) -> Dict[str, List[str]]:
+    async def load_previous_state(self) -> Dict[str, List[str]]:
         """Önceki state'i yükle"""
         try:
-            record = self.kv_store.get_record(self.STATE_KEY)
-            if record and record.get('value'):
+            state = await Actor.get_value(self.STATE_KEY)
+            if state:
                 logger.info("✅ Önceki state yüklendi")
-                return record['value']
+                return state
         except Exception as e:
             logger.warning(f"⚠️ State yükleme hatası: {e}")
 
         return {}
 
-    def save_current_state(self, state: Dict[str, List[str]]):
+    async def save_current_state(self, state: Dict[str, List[str]]):
         """Yeni state'i kaydet"""
         try:
-            self.kv_store.set_record(self.STATE_KEY, state)
+            await Actor.set_value(self.STATE_KEY, state)
             logger.info("💾 State buluta kaydedildi")
         except Exception as e:
             logger.error(f"❌ State kaydetme hatası: {e}")
@@ -515,30 +513,20 @@ class TelegramNotifier:
 # 🎯 MAIN ORCHESTRATOR
 # ==========================================
 
-def main():
+async def main():
     """Ana orkestrasyon fonksiyonu"""
 
     logger.info("=" * 60)
     logger.info("🚀 THE FOLLOW SCOUT - BAŞLATILIYOR")
     logger.info("=" * 60)
 
-    try:
-        # 1️⃣ Apify Client Başlat
-        apify_token = os.environ.get('APIFY_TOKEN')
-        if not apify_token:
-            raise ValueError("❌ APIFY_TOKEN çevre değişkeni bulunamadı!")
-
-        client = ApifyClient(apify_token)
-        kv_store = client.key_value_store()
-
+    async with Actor:
         # 2️⃣ Input'u Al ve Validate Et
         logger.info("📥 Actor input'u yükleniyor...")
-        input_record = kv_store.get_record('INPUT')
+        actor_input = await Actor.get_input()
 
-        if not input_record or not input_record.get('value'):
+        if not actor_input:
             raise ValueError("❌ INPUT bulunamadı!")
-
-        actor_input = input_record['value']
 
         # Gerekli alanları kontrol et
         targets = actor_input.get('targets', [])
@@ -561,11 +549,11 @@ def main():
         session_mgr = SessionManager(session_configs)
         proxy_mgr = ProxyManager(proxy_urls)
         scraper = InstagramScraper(session_mgr, proxy_mgr)
-        state_mgr = StateManager(kv_store)
+        state_mgr = StateManager()
         notifier = TelegramNotifier(tg_token, tg_chat_id)
 
         # 4️⃣ Önceki State'i Yükle
-        previous_data = state_mgr.load_previous_state()
+        previous_data = await state_mgr.load_previous_state()
         current_data = {}
 
         # 5️⃣ Ana Tarama Döngüsü
@@ -629,7 +617,7 @@ def main():
                 time.sleep(delay)
 
         # 7️⃣ State'i Kaydet
-        state_mgr.save_current_state(current_data)
+        await state_mgr.save_current_state(current_data)
 
         # 8️⃣ Özet Rapor
         logger.info("\n" + "=" * 60)
@@ -650,23 +638,29 @@ def main():
             "failed": failed_scrapes,
             "session_stats": session_stats
         }
-        kv_store.set_record('OUTPUT', output_data)
+        await Actor.set_value('OUTPUT', output_data)
 
         logger.info("✅ Actor başarıyla tamamlandı!")
+
+        # Son olarak Actor'ı başarıyla bitir
+        await Actor.exit()
 
     except Exception as e:
         logger.error(f"💥 FATAL ERROR: {e}", exc_info=True)
 
-        # Telegram'a kritik hata bildirimi
+        # Telegram'a kritik hata bildirimi (sadece dene, hata olursa sessizce geç)
         try:
-            notifier = TelegramNotifier(
-                os.environ.get('TELEGRAM_TOKEN', ''),
-                os.environ.get('TELEGRAM_CHAT_ID', '')
-            )
-            notifier.notify_error(f"KRITIK HATA:\n{str(e)[:200]}")
+            actor_input = await Actor.get_input() or {}
+            tg_token = actor_input.get('telegram_token')
+            tg_chat_id = actor_input.get('telegram_chat_id')
+
+            if tg_token and tg_chat_id:
+                notifier = TelegramNotifier(tg_token, tg_chat_id)
+                notifier.notify_error(f"KRITIK HATA:\n{str(e)[:200]}")
         except:
             pass
 
+        await Actor.fail(status_message=str(e))
         raise
 
 # ==========================================
@@ -674,4 +668,4 @@ def main():
 # ==========================================
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

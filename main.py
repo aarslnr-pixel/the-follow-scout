@@ -353,12 +353,18 @@ class StateManager:
         """Full state'i yükle (data + rotation info)"""
         try:
             state = await Actor.get_value(self.STATE_KEY)
+            logger.info(f"🔍 State okuması: {type(state)} - {bool(state)}")
             if state:
-                logger.info("✅ Önceki state yüklendi")
+                rotation_idx = state.get('rotation_index', 0)
+                data_keys = list(state.get('data', {}).keys())
+                logger.info(f"✅ Önceki state yüklendi: rotation={rotation_idx}, targets={data_keys}")
                 return state
+            else:
+                logger.warning("⚠️ State boş veya None")
         except Exception as e:
             logger.warning(f"⚠️ State yükleme hatası: {e}")
 
+        logger.info("🆕 Yeni state oluşturuluyor")
         return {
             "rotation_index": 0,
             "data": {}
@@ -372,7 +378,14 @@ class StateManager:
                 "data": data
             }
             await Actor.set_value(self.STATE_KEY, state)
-            logger.info(f"💾 State kaydedildi (next_index: {rotation_index})")
+            logger.info(f"💾 State kaydedildi (next_index: {rotation_index}, targets: {list(data.keys())})")
+
+            # Doğrulama: Hemen oku
+            verify = await Actor.get_value(self.STATE_KEY)
+            if verify and verify.get('rotation_index') == rotation_index:
+                logger.info("✅ State doğrulaması başarılı")
+            else:
+                logger.error(f"❌ State doğrulaması BAŞARISIZ! Okunan: {verify}")
         except Exception as e:
             logger.error(f"❌ State kaydetme hatası: {e}")
 

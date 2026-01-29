@@ -520,7 +520,8 @@ async def main():
     logger.info("🚀 THE FOLLOW SCOUT - BAŞLATILIYOR")
     logger.info("=" * 60)
 
-    async with Actor:
+    try:
+        async with Actor:
         # 2️⃣ Input'u Al ve Validate Et
         logger.info("📥 Actor input'u yükleniyor...")
         actor_input = await Actor.get_input()
@@ -642,25 +643,8 @@ async def main():
 
         logger.info("✅ Actor başarıyla tamamlandı!")
 
-        # Son olarak Actor'ı başarıyla bitir
-        await Actor.exit()
-
     except Exception as e:
         logger.error(f"💥 FATAL ERROR: {e}", exc_info=True)
-
-        # Telegram'a kritik hata bildirimi (sadece dene, hata olursa sessizce geç)
-        try:
-            actor_input = await Actor.get_input() or {}
-            tg_token = actor_input.get('telegram_token')
-            tg_chat_id = actor_input.get('telegram_chat_id')
-
-            if tg_token and tg_chat_id:
-                notifier = TelegramNotifier(tg_token, tg_chat_id)
-                notifier.notify_error(f"KRITIK HATA:\n{str(e)[:200]}")
-        except:
-            pass
-
-        await Actor.fail(status_message=str(e))
         raise
 
 # ==========================================

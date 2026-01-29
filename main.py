@@ -349,8 +349,8 @@ class StateManager:
 
     STATE_KEY = "STATE"
 
-    async def load_previous_state(self) -> Dict[str, List[str]]:
-        """Önceki state'i yükle"""
+    async def load_full_state(self) -> Dict:
+        """Full state'i yükle (data + rotation info)"""
         try:
             state = await Actor.get_value(self.STATE_KEY)
             if state:
@@ -359,13 +359,20 @@ class StateManager:
         except Exception as e:
             logger.warning(f"⚠️ State yükleme hatası: {e}")
 
-        return {}
+        return {
+            "rotation_index": 0,
+            "data": {}
+        }
 
-    async def save_current_state(self, state: Dict[str, List[str]]):
-        """Yeni state'i kaydet"""
+    async def save_full_state(self, rotation_index: int, data: Dict[str, List[str]]):
+        """Full state'i kaydet"""
         try:
+            state = {
+                "rotation_index": rotation_index,
+                "data": data
+            }
             await Actor.set_value(self.STATE_KEY, state)
-            logger.info("💾 State buluta kaydedildi")
+            logger.info(f"💾 State kaydedildi (next_index: {rotation_index})")
         except Exception as e:
             logger.error(f"❌ State kaydetme hatası: {e}")
 
@@ -530,21 +537,22 @@ async def main():
                 raise ValueError("❌ INPUT bulunamadı!")
 
             # Gerekli alanları kontrol et
-            targets = actor_input.get('targets', [])
+            all_targets = actor_input.get('targets', [])
             session_configs = actor_input.get('sessions', [])  # [{"session_id": "...", "username": "bot1"}]
             proxy_urls = actor_input.get('proxy_urls', [])  # Liste halinde
             tg_token = actor_input.get('telegram_token')
             tg_chat_id = actor_input.get('telegram_chat_id')
+            rotation_mode = actor_input.get('rotation_mode', True)  # Default: True
 
             # Validation
-            if not targets:
+            if not all_targets:
                 raise ValueError("❌ 'targets' listesi boş!")
             if not session_configs:
                 raise ValueError("❌ 'sessions' listesi boş!")
             if not tg_token or not tg_chat_id:
                 raise ValueError("❌ Telegram bilgileri eksik!")
 
-            logger.info(f"✅ Input doğrulandı: {len(targets)} hedef, {len(session_configs)} session")
+            logger.info(f"✅ Input doğrulandı: {len(all_targets)} hedef, {len(session_configs)} session")
 
             # 3️⃣ Manager'ları Başlat
             session_mgr = SessionManager(session_configs)
@@ -554,10 +562,45 @@ async def main():
             notifier = TelegramNotifier(tg_token, tg_chat_id)
 
             # 4️⃣ Önceki State'i Yükle
-            previous_data = await state_mgr.load_previous_state()
-            current_data = {}
+            full_state = await state_mgr.load_full_state()
+            previous_data = full_state.get('data', {})
+            current_rotation_index = full_state.get('rotation_index', 0)
 
-            # 5️⃣ Ana Tarama Döngüsü
+            # 5️⃣ ROTATION LOGIC: Hedefleri Böl
+            if rotation_mode:
+                # Hedefleri session sayısına göre böl
+                num_sessions = len(session_configs)
+                group_size = (len(all_targets) + num_sessions - 1) // num_sessions  # Ceiling division
+
+                # Hangi session'ın sırası?
+                current_session_index = current_rotation_index % num_sessions
+
+                # Bu session'ın hedef grubunu al
+                start_idx = current_session_index * group_size
+                end_idx = min(start_idx + group_size, len(all_targets))
+                targets = all_targets[start_idx:end_idx]
+
+                # Sadece bu session'ı kullan
+                active_session_config = session_configs[current_session_index]
+                session_mgr = SessionManager([active_session_config])
+
+                logger.info(
+                    f"🔄 ROTATION MODE: Session {current_session_index + 1}/{num_sessions} "
+                    f"({active_session_config.get('username')}) - "
+                    f"Hedefler: {len(targets)}/{len(all_targets)}"
+                )
+
+                # Bir sonraki index
+                next_rotation_index = (current_rotation_index + 1) % num_sessions
+            else:
+                # Normal mod: Tüm hedefleri tara
+                targets = all_targets
+                next_rotation_index = 0
+                logger.info(f"📊 NORMAL MODE: Tüm hedefler taranacak")
+
+            current_data = previous_data.copy()  # Eski veriyi koru
+
+            # 6️⃣ Ana Tarama Döngüsü
             logger.info(f"\n🔍 TARAMA BAŞLIYOR: {len(targets)} hedef\n")
 
             successful_scrapes = 0
@@ -617,8 +660,8 @@ async def main():
                     logger.info(f"⏸️ Sonraki hedef için {delay:.1f}s bekleniyor...")
                     time.sleep(delay)
 
-            # 7️⃣ State'i Kaydet
-            await state_mgr.save_current_state(current_data)
+            # 7️⃣ State'i Kaydet (rotation index dahil)
+            await state_mgr.save_full_state(next_rotation_index, current_data)
 
             # 8️⃣ Özet Rapor
             logger.info("\n" + "=" * 60)
@@ -629,15 +672,22 @@ async def main():
 
             session_stats = session_mgr.get_stats()
             logger.info(f"🔑 Session Durumu: {session_stats['active']}/{session_stats['total']} aktif")
+
+            if rotation_mode:
+                logger.info(f"🔄 Sıradaki Session: {next_rotation_index + 1}/{len(session_configs)}")
+
             logger.info("=" * 60)
 
             # 9️⃣ Apify Output (İsteğe bağlı)
             output_data = {
                 "timestamp": datetime.now().isoformat(),
+                "total_targets": len(all_targets),
                 "targets_scraped": len(targets),
                 "successful": successful_scrapes,
                 "failed": failed_scrapes,
-                "session_stats": session_stats
+                "session_stats": session_stats,
+                "rotation_mode": rotation_mode,
+                "next_rotation_index": next_rotation_index if rotation_mode else None
             }
             await Actor.set_value('OUTPUT', output_data)
 

@@ -59,6 +59,13 @@
       "type": "string",
       "description": "Bildirim gönderilecek chat ID",
       "editor": "textfield"
+    },
+    "rotation_mode": {
+      "title": "Round-Robin Rotation",
+      "type": "boolean",
+      "description": "Her çalıştırmada tek session grubunu tara (çok hedef için önerilir). Kapalıysa tüm hedefler her seferinde taranır.",
+      "editor": "checkbox",
+      "default": true
     }
   },
   "required": ["targets", "sessions", "telegram_token", "telegram_chat_id"]

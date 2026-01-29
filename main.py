@@ -522,126 +522,126 @@ async def main():
 
     try:
         async with Actor:
-        # 2️⃣ Input'u Al ve Validate Et
-        logger.info("📥 Actor input'u yükleniyor...")
-        actor_input = await Actor.get_input()
+            # 2️⃣ Input'u Al ve Validate Et
+            logger.info("📥 Actor input'u yükleniyor...")
+            actor_input = await Actor.get_input()
 
-        if not actor_input:
-            raise ValueError("❌ INPUT bulunamadı!")
+            if not actor_input:
+                raise ValueError("❌ INPUT bulunamadı!")
 
-        # Gerekli alanları kontrol et
-        targets = actor_input.get('targets', [])
-        session_configs = actor_input.get('sessions', [])  # [{"session_id": "...", "username": "bot1"}]
-        proxy_urls = actor_input.get('proxy_urls', [])  # Liste halinde
-        tg_token = actor_input.get('telegram_token')
-        tg_chat_id = actor_input.get('telegram_chat_id')
+            # Gerekli alanları kontrol et
+            targets = actor_input.get('targets', [])
+            session_configs = actor_input.get('sessions', [])  # [{"session_id": "...", "username": "bot1"}]
+            proxy_urls = actor_input.get('proxy_urls', [])  # Liste halinde
+            tg_token = actor_input.get('telegram_token')
+            tg_chat_id = actor_input.get('telegram_chat_id')
 
-        # Validation
-        if not targets:
-            raise ValueError("❌ 'targets' listesi boş!")
-        if not session_configs:
-            raise ValueError("❌ 'sessions' listesi boş!")
-        if not tg_token or not tg_chat_id:
-            raise ValueError("❌ Telegram bilgileri eksik!")
+            # Validation
+            if not targets:
+                raise ValueError("❌ 'targets' listesi boş!")
+            if not session_configs:
+                raise ValueError("❌ 'sessions' listesi boş!")
+            if not tg_token or not tg_chat_id:
+                raise ValueError("❌ Telegram bilgileri eksik!")
 
-        logger.info(f"✅ Input doğrulandı: {len(targets)} hedef, {len(session_configs)} session")
+            logger.info(f"✅ Input doğrulandı: {len(targets)} hedef, {len(session_configs)} session")
 
-        # 3️⃣ Manager'ları Başlat
-        session_mgr = SessionManager(session_configs)
-        proxy_mgr = ProxyManager(proxy_urls)
-        scraper = InstagramScraper(session_mgr, proxy_mgr)
-        state_mgr = StateManager()
-        notifier = TelegramNotifier(tg_token, tg_chat_id)
+            # 3️⃣ Manager'ları Başlat
+            session_mgr = SessionManager(session_configs)
+            proxy_mgr = ProxyManager(proxy_urls)
+            scraper = InstagramScraper(session_mgr, proxy_mgr)
+            state_mgr = StateManager()
+            notifier = TelegramNotifier(tg_token, tg_chat_id)
 
-        # 4️⃣ Önceki State'i Yükle
-        previous_data = await state_mgr.load_previous_state()
-        current_data = {}
+            # 4️⃣ Önceki State'i Yükle
+            previous_data = await state_mgr.load_previous_state()
+            current_data = {}
 
-        # 5️⃣ Ana Tarama Döngüsü
-        logger.info(f"\n🔍 TARAMA BAŞLIYOR: {len(targets)} hedef\n")
+            # 5️⃣ Ana Tarama Döngüsü
+            logger.info(f"\n🔍 TARAMA BAŞLIYOR: {len(targets)} hedef\n")
 
-        successful_scrapes = 0
-        failed_scrapes = 0
+            successful_scrapes = 0
+            failed_scrapes = 0
 
-        for i, target_username in enumerate(targets, 1):
-            logger.info(f"\n--- [{i}/{len(targets)}] {target_username} ---")
+            for i, target_username in enumerate(targets, 1):
+                logger.info(f"\n--- [{i}/{len(targets)}] {target_username} ---")
 
-            # Scrape yap
-            result = scraper.scrape_following(target_username)
+                # Scrape yap
+                result = scraper.scrape_following(target_username)
 
-            if not result.success:
-                logger.error(f"❌ {target_username}: Tarama başarısız - {result.error_message}")
-                failed_scrapes += 1
+                if not result.success:
+                    logger.error(f"❌ {target_username}: Tarama başarısız - {result.error_message}")
+                    failed_scrapes += 1
 
-                # Eski veriyi koru (veri kaybını önle)
-                if target_username in previous_data:
-                    current_data[target_username] = previous_data[target_username]
-                    logger.info(f"💾 {target_username}: Eski veri korundu")
+                    # Eski veriyi koru (veri kaybını önle)
+                    if target_username in previous_data:
+                        current_data[target_username] = previous_data[target_username]
+                        logger.info(f"💾 {target_username}: Eski veri korundu")
 
-                # Hata bildirimi gönder
-                notifier.notify_error(
-                    f"<b>{target_username}</b> taranamadı:\n{result.error_message}"
+                    # Hata bildirimi gönder
+                    notifier.notify_error(
+                        f"<b>{target_username}</b> taranamadı:\n{result.error_message}"
+                    )
+                    continue
+
+                # Başarılı tarama
+                successful_scrapes += 1
+                following_list = result.following_list
+                current_data[target_username] = following_list
+
+                # 6️⃣ Karşılaştırma Yap
+                comparison = ComparisonEngine.compare(
+                    target_username,
+                    previous_data.get(target_username),
+                    following_list
                 )
-                continue
 
-            # Başarılı tarama
-            successful_scrapes += 1
-            following_list = result.following_list
-            current_data[target_username] = following_list
+                # Şüpheli durum varsa uyar
+                if comparison["is_suspicious"]:
+                    notifier.notify_error(comparison["warning"])
+                    continue
 
-            # 6️⃣ Karşılaştırma Yap
-            comparison = ComparisonEngine.compare(
-                target_username,
-                previous_data.get(target_username),
-                following_list
-            )
+                # Değişiklik varsa bildir
+                if comparison["has_changes"]:
+                    # Yeni takipler
+                    for new_person in comparison["new_follows"]:
+                        notifier.notify_new_follow(target_username, new_person)
 
-            # Şüpheli durum varsa uyar
-            if comparison["is_suspicious"]:
-                notifier.notify_error(comparison["warning"])
-                continue
+                    # Takipten çıkanlar
+                    for lost_person in comparison["unfollows"]:
+                        notifier.notify_unfollow(target_username, lost_person)
 
-            # Değişiklik varsa bildir
-            if comparison["has_changes"]:
-                # Yeni takipler
-                for new_person in comparison["new_follows"]:
-                    notifier.notify_new_follow(target_username, new_person)
+                # Hedefler arası bekleme (Instagram'ı kızdırmamak için)
+                if i < len(targets):
+                    delay = random.uniform(10, 20)
+                    logger.info(f"⏸️ Sonraki hedef için {delay:.1f}s bekleniyor...")
+                    time.sleep(delay)
 
-                # Takipten çıkanlar
-                for lost_person in comparison["unfollows"]:
-                    notifier.notify_unfollow(target_username, lost_person)
+            # 7️⃣ State'i Kaydet
+            await state_mgr.save_current_state(current_data)
 
-            # Hedefler arası bekleme (Instagram'ı kızdırmamak için)
-            if i < len(targets):
-                delay = random.uniform(10, 20)
-                logger.info(f"⏸️ Sonraki hedef için {delay:.1f}s bekleniyor...")
-                time.sleep(delay)
+            # 8️⃣ Özet Rapor
+            logger.info("\n" + "=" * 60)
+            logger.info("📊 TARAMA TAMAMLANDI - ÖZET RAPOR")
+            logger.info("=" * 60)
+            logger.info(f"✅ Başarılı: {successful_scrapes}/{len(targets)}")
+            logger.info(f"❌ Başarısız: {failed_scrapes}/{len(targets)}")
 
-        # 7️⃣ State'i Kaydet
-        await state_mgr.save_current_state(current_data)
+            session_stats = session_mgr.get_stats()
+            logger.info(f"🔑 Session Durumu: {session_stats['active']}/{session_stats['total']} aktif")
+            logger.info("=" * 60)
 
-        # 8️⃣ Özet Rapor
-        logger.info("\n" + "=" * 60)
-        logger.info("📊 TARAMA TAMAMLANDI - ÖZET RAPOR")
-        logger.info("=" * 60)
-        logger.info(f"✅ Başarılı: {successful_scrapes}/{len(targets)}")
-        logger.info(f"❌ Başarısız: {failed_scrapes}/{len(targets)}")
+            # 9️⃣ Apify Output (İsteğe bağlı)
+            output_data = {
+                "timestamp": datetime.now().isoformat(),
+                "targets_scraped": len(targets),
+                "successful": successful_scrapes,
+                "failed": failed_scrapes,
+                "session_stats": session_stats
+            }
+            await Actor.set_value('OUTPUT', output_data)
 
-        session_stats = session_mgr.get_stats()
-        logger.info(f"🔑 Session Durumu: {session_stats['active']}/{session_stats['total']} aktif")
-        logger.info("=" * 60)
-
-        # 9️⃣ Apify Output (İsteğe bağlı)
-        output_data = {
-            "timestamp": datetime.now().isoformat(),
-            "targets_scraped": len(targets),
-            "successful": successful_scrapes,
-            "failed": failed_scrapes,
-            "session_stats": session_stats
-        }
-        await Actor.set_value('OUTPUT', output_data)
-
-        logger.info("✅ Actor başarıyla tamamlandı!")
+            logger.info("✅ Actor başarıyla tamamlandı!")
 
     except Exception as e:
         logger.error(f"💥 FATAL ERROR: {e}", exc_info=True)

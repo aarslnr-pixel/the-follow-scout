@@ -1,0 +1,29 @@
+# Test files
+test_*.py
+*_test.py
+
+# Input files
+*_input.json
+example_*.json
+my_*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+
+# Apify local
+apify_storage/
+storage/
+
+# IDE
+.vscode/
+.idea/
+
+# System
+.DS_Store
+*.log

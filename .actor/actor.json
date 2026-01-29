@@ -1,0 +1,29 @@
+{
+  "actorSpecification": 1,
+  "name": "the-follow-scout",
+  "version": "2.0.0",
+  "buildTag": "latest",
+  "environmentVariables": {},
+  "dockerfile": "./Dockerfile",
+  "readme": "./README.md",
+  "input": "./input_schema.json",
+  "storages": {
+    "dataset": {
+      "actorSpecification": 1,
+      "title": "Following Changes",
+      "views": {
+        "overview": {
+          "title": "Overview",
+          "transformation": {
+            "fields": [
+              "timestamp",
+              "target",
+              "new_follows",
+              "unfollows"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

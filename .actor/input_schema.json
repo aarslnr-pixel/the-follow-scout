@@ -1,0 +1,61 @@
+{
+  "title": "The Follow Scout Input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "targets": {
+      "title": "Hedef Kullanıcılar",
+      "type": "array",
+      "description": "Takip edilecek Instagram kullanıcı adları (örn: cristiano, leomessi)",
+      "editor": "stringList",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "sessions": {
+      "title": "Instagram Sessions",
+      "type": "array",
+      "description": "Bot hesaplarınızın session bilgileri",
+      "editor": "json",
+      "items": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "title": "Session ID"
+          },
+          "username": {
+            "type": "string",
+            "title": "Bot Username"
+          }
+        },
+        "required": ["session_id", "username"]
+      },
+      "minItems": 1
+    },
+    "proxy_urls": {
+      "title": "Proxy URLs (opsiyonel)",
+      "type": "array",
+      "description": "Residential proxy listesi (örn: http://user:pass@proxy.com:8000)",
+      "editor": "stringList",
+      "items": {
+        "type": "string"
+      }
+    },
+    "telegram_token": {
+      "title": "Telegram Bot Token",
+      "type": "string",
+      "description": "Telegram bot tokeniniz (BotFather'dan alın)",
+      "editor": "textfield",
+      "isSecret": true
+    },
+    "telegram_chat_id": {
+      "title": "Telegram Chat ID",
+      "type": "string",
+      "description": "Bildirim gönderilecek chat ID",
+      "editor": "textfield"
+    }
+  },
+  "required": ["targets", "sessions", "telegram_token", "telegram_chat_id"]
+}

@@ -23,11 +23,15 @@
         "properties": {
           "session_id": {
             "type": "string",
-            "title": "Session ID"
+            "title": "Session ID",
+            "description": "Instagram sessionid cookie değeri",
+            "editor": "textfield"
           },
           "username": {
             "type": "string",
-            "title": "Bot Username"
+            "title": "Bot Username",
+            "description": "Bot hesabının Instagram kullanıcı adı",
+            "editor": "textfield"
           }
         },
         "required": ["session_id", "username"]
